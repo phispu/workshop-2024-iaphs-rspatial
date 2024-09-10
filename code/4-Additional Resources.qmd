@@ -1,0 +1,7 @@
+# Additional Resources
+
+In case you would like to learn more about geocomputation, the tidycensus package, or general data wrangling, here are some additional resources:
+
+-   [Geocomputation with R (free online book)](https://r.geocompx.org/)
+-   [Vignette for the tidycensus package](https://walker-data.com/tidycensus/articles/basic-usage.html)
+-   [R for Data Science (free online book)](https://r4ds.hadley.nz/)

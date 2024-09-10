@@ -1,0 +1,249 @@
+# Primer to the Tutorial
+
+## Quarto Markdown
+
+This tutorial is written in [Quarto Markdown](https://quarto.org/docs/authoring/markdown-basics.html) (.qmd files), a powerful tool for creating reproducible documents that combine text, code, and output. By preparing this tutorial in Quarto, I can provide you with HTML/PDF files to reference later while also providing you with the R code with explanations to run on your own device. In a Quarto Markdown file:
+
+Here is where you can find text explaining the code. Below is an example of a code chunk (surrounded by the three backticks). Code chunks will often have a few lines in the beginning with `#|` that specify options for the code chunk. For example: 
+
+- `#| label: Here is a Label for the Code Chunk` will provide a label for the code chunk that can be referenced later. 
+- `#| eval: true` will run the code chunk when the document is rendered.
+
+```{r}
+#| label: Here is a Label for the Code Chunk
+#| eval: true
+
+print("This is a written in code chunk. Running this will produce an output.")
+
+```
+
+In this tutorial, you do not need to worry about the code chunk options. I recommend following along primarily in these `.qmd` files and reference the HTML files if you'd like to reference polished output.
+
+
+## Installing and Loading Packages
+
+First, please install the `pacman` package. We will use this package to install and load the packages needed for this workshop.
+
+```{r}
+#| label: Install pacman
+#| eval: false
+
+install.packages("pacman")
+```
+
+Install and load the `tidyverse` package using `pacman::p_load()` function.
+
+```{r}
+#| label: Load tidyverse
+
+library(pacman)
+pacman::p_load(
+  tidyverse
+)
+```
+
+
+
+### Alternative Method
+
+Remember, you can always use the `install.packages()` function if `pacman::p_load()` does not work for you.
+
+```{r}
+#| label: Install tidyverse (Alternative)
+#| eval: false
+
+install.packages("tidycensus")
+```
+
+
+## Tutorial Syntax
+
+### The Double Colon Operator (::)
+
+When referring to a function from a non-base R package, we will generally use the double colon operator (`::`) to specify the source package of the function. This will help with learning functions from the various packages we will use today and avoiding errors when using functions with the same name from different packages.
+
+For example, `tibble::as_tibble()` refers to the `as_tibble()` function from the `tibble` package. This function is used to coerce a data frame to a tibble, which is a modern version of a data frame with better usability and readability. 
+
+```{r}
+#| label: Double Colon Operator
+
+data(iris) # This loads the iris dataset from base R
+
+tibble::as_tibble(iris)
+
+```
+
+### The Pipe Operator (|>)
+
+In this tutorial, we will use [pipes](https://r4ds.had.co.nz/pipes.html) (`|>`) to clearly express sequences of steps. This is similar to the magrittr pipe (`%>%`) that you may have seen before. Piping allows us to read the code from top to bottom rather than inside out.
+
+```{r}
+#| label: Pipe Operator
+
+# Without pipes
+tibble::as_tibble(iris)
+
+# With pipes
+iris |> 
+  tibble::as_tibble()
+
+```
+
+In a longer example, it is a bit easier to read the code when using pipes.
+
+```{r}
+#| label: Pipe Operator - Longer Example
+
+# Without pipes
+mean(dplyr::filter(tibble::as_tibble(iris), Species == 'virginica')$Petal.Length)
+
+# With pipes
+iris |> 
+  as_tibble() |> 
+  dplyr::filter(Species == 'virginica') |> 
+  dplyr::summarize(mean_pl = mean(Petal.Length))
+
+```
+
+
+## Tidyverse
+
+In this tutorial, we will use [`tidyverse`](https://www.tidyverse.org/), which is a collection of R packages that includes functions data wrangling and visualization. The packages in the `tidyverse` share an underlying design philosophy, grammar, and data structures.
+
+### Coercing a Data Frame to a Tibble
+
+As mentioned above, the `tibble::as_tibble()` is used to coerce a data frame to a tibble, which is a modern version of a data frame with better usability and readability. For example, tibbles print only the first 10 rows and all the columns that fit on the screen by default.
+
+```{r}
+#| label: Creating a Tibble
+
+iris <- iris |> 
+  tibble::as_tibble()
+
+```
+
+
+### Selecting Columns
+
+The `dplyr::select()` function is used to select columns from a data frame. Below, we select the columns `Species`, `Petal.Length`, and `Petal.Width` from the `iris` dataset.
+
+```{r}
+#| label: Selecting Columns
+
+iris |> 
+  dplyr::select(Species, Petal.Length, Petal.Width)
+
+```
+
+### Filtering Rows
+
+The `dplyr::filter()` is used to filter rows in a data frame based on a condition. Below, we filter the `iris` dataset to only include rows where `Species` is equal to `virginica`.
+
+```{r}
+#| label: Filtering Rows
+
+iris |> 
+  dplyr::filter(Species == 'virginica')
+
+```
+
+### Mutating Columns
+
+The `dplyr::mutate()` function is used to create new columns or modify existing columns in a data frame. Below, we create a new column called `petal_ratio` by dividing `Petal.Length` by `Petal.Width`.
+
+```{r}
+#| label: Mutating Columns
+
+iris |> 
+  dplyr::mutate(petal_ratio = Petal.Length / Petal.Width)
+
+```
+
+
+### Summarizing Data by Groups
+
+The `dplyr::group_by()` function is used to group the data, and the `dplyr::summarize()` is used to calculate summary statistics by group. Below, we calculate the mean `Petal.Length` and `Petal.Width` (summary statistics) for each `Species` (group) in the `iris` dataset.
+
+```{r}
+#| label: Summarizing Data
+
+iris |> 
+  dplyr::group_by(Species) |> 
+  dplyr::summarize(
+    mean_petal_length = mean(Petal.Length),
+    mean_petal_width = mean(Petal.Width)
+  )
+```
+
+### Creating a Long Dataset
+We use the `tidyr::pivot_longer()` function to create a long data frame, which tends to be easier to work with when using tidyverse packages including ggplot2. 
+
+- A **long** dataset, also known as a "tidy" dataset, is structured so that each row represents a single observation, with one column for each variable and an additional column for the values. This format is often used for time series or repeated measures data.
+- In contrast, a **wide** dataset has a format where each row represents a single subject or entity, with multiple columns for different measurements or observations taken at different times or under different conditions. This format is common in datasets where comparisons across different time points or conditions are needed.
+- Below, we combine the `Petal.Length` and `Petal.Width` columns. The names (i.e., "Petal.Length" and "Petal.Width") are stored in a new column called `Petal_Feature`, and the values are stored in a new column called `value`. 
+
+```{r}
+iris |> 
+  tidyr::pivot_longer(cols = c(Petal.Length, Petal.Width),
+                      names_to = 'Petal_Feature',
+                      values_to = 'value') 
+
+```
+
+
+### Plotting Data
+
+The `ggplot2` package is used for data visualization in the `tidyverse`. The `ggplot()` function initializes a ggplot2 object, the `aes()` function creates aesthetic mappings (e.g., x-axis and y-axis variables), and the `geom_point()` function creates a scatter plot.
+
+- Take note that the different ggplot2 *layers* are connected with the `+` operator. 
+- Generally, we won't use the double colon (`::`) operator with `ggplot2` often since the functions are usually uniquely named and to avoid verbose code (ggplot2 plots can contain a lot of layers).
+
+Below, we create a scatter plot of `Petal.Length` and `Petal.Width` for the `iris` dataset.
+
+```{r}
+#| label: Plotting Data
+
+ggplot(data = iris, aes(x = Petal.Length, y = Petal.Width)) +
+  geom_point()
+
+```
+
+You can use the pipe operator `|>` to connect the iris dataset to `ggplot2()` function to initialize the ggplot2 object.
+
+```{r}
+#| label: Plotting Data - Piping
+
+iris |> 
+  ggplot(aes(x = Petal.Length, y = Petal.Width)) +
+  geom_point()
+
+```
+
+The `facet_grid()` function creates a matrix of subplots by *faceting* variables. Below, we create a scatter plot with facets by Species.
+
+```{r}
+#| label: Facet Plots - Grid
+
+iris |> 
+  ggplot(aes(x = Petal.Length, y = Petal.Width)) +
+  geom_point() +
+  facet_grid(. ~ Species)
+
+```
+
+Alternatively, we can use the  `facet_wrap()` function if we'd like to specify the number of rows or columns. Below, we create a scatter plot with facets by Species. 
+
+- Take note that we need to wrap the variable name in the `vars()` function.
+
+```{r}
+#| label: Facet Plots - Wrap
+
+iris |> 
+  ggplot(aes(x = Petal.Length, y = Petal.Width)) +
+  geom_point() +
+  facet_wrap(vars(Species), nrow = 2)
+
+```
+
+
+

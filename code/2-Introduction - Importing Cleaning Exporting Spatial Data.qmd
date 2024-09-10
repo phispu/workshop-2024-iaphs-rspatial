@@ -1,0 +1,407 @@
+# Introduction
+
+## Setup
+
+### Install and Load Packages
+
+Install and load the following packages by using the `pacman::p_load()` function. These packages give us functions to help with the following:
+
+-   `pacman`: helps streamline installing and loading packages
+-   `tidycensus`: importing Census data
+-   `sf`: working with and mapping spatial data
+-   `sfdep`: provides operations for spatial dependence and clustering
+-   `sfarrow`: reading and writing spatial data
+-   `ggspatial`: mapping north arrow and scale bar
+-   `cartogram`: creating cartograms
+-   `tidyverse`: data wrangling
+-   `usethis`: helps us set up the API key
+-   `readr`: importing CSV files
+-   `patchwork`: combining multiple maps
+-   `gganimate`: creating animated maps
+
+```{r}
+#| label: Installing and Loading Packages
+
+library(pacman)
+pacman::p_load(
+  # Spatial packages
+  tidycensus,
+  sf,
+  sfdep,
+  sfarrow,
+  ggspatial,
+  cartogram,
+  # Data importing, wrangling, and plotting packages
+  tidyverse,
+  usethis,
+  readr,
+  patchwork,
+  gganimate
+)
+```
+
+### Obtain and Load Census API Key
+
+In order to use the tidycensus package, we will need to obtain and load a Census API key.
+
+1.  Obtain a Census API key [here](https://api.census.gov/data/key_signup.html).
+
+2.  Run the `edit_r_envion()` function from the `usethis` package. The `.Renviron` file should open.
+
+```{r}
+#| label: Add Census Key to R Environment
+
+usethis::edit_r_environ()
+```
+
+3.  Follow these steps to add your set up your Census API key:
+
+-   Copy and paste the following line into the `.Renviron` file.
+-   Add your Census API key after the `=` sign.
+-   Save the `.Renviron` file.
+
+```{r label = "Edit R Environment", eval = F}
+
+APIKEY_CENSUS=
+
+```
+
+4.  Restart your R session so you can access your API key by clicking on the `Session` tab in the top menu and selecting `Restart R`.
+5.  Run the following code to load your Census API key, using the `tidycensus::census_api_key()` function.
+
+```{r}
+#| label: Load Census API Key
+
+tidycensus::census_api_key(Sys.getenv("APIKEY_CENSUS"))
+
+```
+
+## Identifying Census Variable Names
+
+### Method 1
+
+You can get a list of variable names and descriptions from the U.S. Census using the `load_variables()` function from the `tidycensus` package with the following arguments:
+
+-   `year = 2015`: Obtains data for 2015
+-   `dataset = "acs5"`: Obtains the American Community Survey (ACS) data. We are using the ACS data since the Decennial Census data unavailable for 2015.
+-   `cache = TRUE`: Caches the data so it runs faster next time it is run.
+
+Since we are interested in the year 2015, let's use the American Community Survey (vs. the Decennial Census data). We will use the 5-year ACS estimates and filter to variables that are available at the Census tract level.
+
+```{r}
+#| label: Import Census Variable Lookup Table
+
+varlookup_2015 <- tidycensus::load_variables(
+    year = 2015, 
+    dataset = "acs5", 
+    cache = TRUE)
+
+varlookup_2015 |> head()
+```
+
+We can see that `tidycensus::load_variables()` gave us variables across different geographies. Let's filter to only tract-level variables.
+
+```{r}
+varlookup_2015_tract <- varlookup_2015 |> 
+  dplyr::filter(geography == "tract")
+
+varlookup_2015_tract |> head()
+```
+
+We can see that the `label` and `concept` columns have variable information. The `stingr::str_detect()` function along with `dplyr::filter()` allows us to search text strings for key words. We can use it to find the variable names related to median household income and educational attainment.
+
+-   **Median household income**: We can see that the variable *B06011_001* is an estimate for the median household income for the total population
+
+```{r search_income}
+#| Label: Search Variables - Income
+
+varlookup_2015_tract |> 
+  dplyr::filter(concept |> stringr::str_detect("MEDIAN INCOME"))
+```
+
+-   **Gini coefficient**: We can see that the variable *B19083_001* is an estimate for Gini index of income inequality.
+
+```{r}
+#| Label: Search Variables - Gini Coefficient
+
+varlookup_2015_tract |> 
+  dplyr::filter(concept |> stringr::str_detect("GINI"))
+```
+
+-   *Educational attainment*: We can see that the variables *B06009_001, B06009_002, B06009_003, B06009_004, B06009_005* are estimates related to educational attainment (B06009_002 for less than high school, B06009_003 for high school graduate, B06009_003 for some college, B06009_004 for bachelor's, and B06009_005 for graduate) for the total population.
+
+```{r}
+#| Label: Search Variables - Education
+
+varlookup_2015_tract |> 
+  dplyr::filter(concept |> stringr::str_detect("EDUCATION"))
+```
+
+-   **Nativity**: We can see that the variable *B05002_013* is an estimate for those who were foreign-born (with the *B05002_001* representing the total column).
+
+```{r}
+#| Label: Search Variables - Nativity
+
+varlookup_2015_tract |> 
+  dplyr::filter(concept |> stringr::str_detect("NATIVITY")) |> print(n = 20)
+```
+
+### Method 2
+
+We can also use the RStudio IDE to search the variables. The `view()` function opens up the `varlist_2015_tract` data frame containing the ACS variable descriptions in a new tab.
+
+```{r search_view}
+varlookup_2015_tract |> view()
+```
+
+In the example below, we search for variables related to "income" by using the search bar on the top right hand side of the window.
+
+![Searching for Income](../images/StepB-tidycensus-searchvars.png)
+
+## Importing Data
+
+### Census Data
+
+When downloading the ACS data using the `tidycensus::get_acs()` function, we provide the following information with the arguments:
+
+-   `geography = "tract"`: Geography of interest/unit of analysis. In our example, we are downloading Census tract-level data. See a full list of available geographies [here](https://walker-data.com/tidycensus/articles/basic-usage.html#geography-in-tidycensus).
+-   `variables = vars_acs`: Variables of interest. We first create a named vector called `vars_acs` to specify our variables of interest and rename them.
+-   `state = "MO"`: State of interest. In our example, we are downloading data for Missouri.
+-   `year = 2015`: Year of interest. In our example, we are downloading data for 2015.
+-   `output = "wide"`: Output format. In our example, we are downloading wide data (as opposed to long data).
+
+Let's use median income in the past 12 months (B06011_001), the Gini coefficient (B19083_001), and educational attainment (B06009_001, B06009_002, B06009_003, B06009_004, B06009_005).
+
+#### Tabular
+
+```{r}
+#| label: Import Census Table
+
+vars_acs <- c(inc       = "B06011_001", # Median Household income
+              gini      = "B19083_001", # Gini coefficient
+              edu_tot   = "B06009_001", 
+              edu_lths  = "B06009_002", # Less than High School Education
+              nat_tot   = "B05002_001",
+              nat_fb    = "B05002_013") # Foreign-born
+
+acs_mo2015_df_prelim <- tidycensus::get_acs(
+  geography = "tract",
+  variables = vars_acs,
+  state = "MO",
+  year = 2015,
+  output = "wide")
+
+acs_mo2015_df_prelim |> head()
+
+```
+
+With the `class()` function, we can see that we downloaded a data frame.
+
+```{r}
+acs_mo2015_df_prelim |> class()
+```
+
+#### Spatial
+
+We can use the `geometry = TRUE` argument in the `tidycensus::get_acs()` function to bring in the geometries. When viewing the object, you will notice a new `geometry` column.
+
+```{r}
+#| label: Import Census SF
+
+acs_mo2015_sf_prelim <- tidycensus::get_acs(
+    geography = "tract",
+    variables = vars_acs,
+    state = "MO",
+    year = 2015,
+    output = "wide", 
+    geometry = TRUE) # To also bring in geometries, add in the geometry = TRUE function
+  
+acs_mo2015_sf_prelim |> head()
+```
+
+With the `class()` function, we can see that we downloaded a simple features (spatial) object.
+
+```{r}
+acs_mo2015_sf_prelim |> class()
+```
+
+Let's download Census data for states for yeasr 2018, 2019, and 2020. For this repetitive task, let's first create a function.
+
+```{r}
+get_acs_states <- function(vars_acs, yr){
+  tidycensus::get_acs(geography = "state",
+      variables = vars_acs,
+      year = yr,
+      output = "wide", 
+      cb = TRUE,
+      geometry = TRUE) |> 
+    dplyr::mutate(yr = yr)
+}
+```
+
+Let's use this function to download the data for the three years and concatenate them with the `dplyr::bind_rows()` function.
+
+```{r}
+acs_states2018_sf_prelim <- get_acs_states(vars_acs = vars_acs, yr = 2018)
+acs_states2019_sf_prelim <- get_acs_states(vars_acs = vars_acs, yr = 2019)
+acs_states2020_sf_prelim <- get_acs_states(vars_acs = vars_acs, yr = 2020)
+
+acs_states_sf_prelim <- dplyr::bind_rows(
+  acs_states2018_sf_prelim,
+  acs_states2019_sf_prelim,
+  acs_states2020_sf_prelim)
+```
+
+
+### Life Expectancy Data
+
+Life expectancy data has already downloaded as a CSV file.
+
+```{r}
+#| label: Import USALEEP Life Expectancy Data
+
+usaleep_prelim <- readr::read_csv("data/usaleep_2015.csv")
+
+```
+
+### Shapefiles
+
+Use the `tigris::tracts()` function to download the Census tract shapefiles for Missouri in 2015.
+
+-   The `cb = TRUE` argument specifies that we want to download cartographic boundaries, which are simplified shapefiles (which maps faster, as opposed to full resolution shapefiles).
+
+```{r}
+#| label: Tract Shapefiles
+
+tracts_mo2015_sf <- tigris::tracts(year = 2015, 
+                                   state = "MO", 
+                                   cb = TRUE)
+
+```
+
+## Cleaning Data
+
+### Census - Table
+
+Let's convert the counts to proportions in the Census data. Take note that the columns corresponding to the estimate have the `E` suffix.
+
+```{r}
+#| label: Clean Census Data
+#| echo: false
+
+acs_mo2015_df <- acs_mo2015_df_prelim |> 
+  dplyr::transmute(
+    GEOID = GEOID,
+    inc = incE,
+    gini = giniE,
+    pct_lths = edu_lthsE/edu_totE,
+    pct_fb = nat_fbE/nat_totE)
+
+```
+
+### Census - Spatial
+
+Let's similarly clean the spatial Census data for states. For our example, we will remove the District of Columbia and Puerto Rico.
+
+```{r}
+acs_states_sf <- acs_states_sf_prelim |> 
+  # Remove DC and PR
+  dplyr::filter(GEOID != "11" & GEOID != "72") |> 
+  # Clean variables
+  dplyr::transmute(
+    yr = yr,
+    GEOID = GEOID,
+    state = NAME,
+    inc = incE,
+    gini = giniE,
+    pct_lths = edu_lthsE/edu_totE,
+    pct_fb = nat_fbE/nat_totE)
+
+```
+
+For later mapping, use the `tigris::shift_geometry()` function so Hawaii and Alaska are mapped more closely to the contiguous US.
+
+```{r}
+acs_states_sf <- acs_states_sf |>
+  tigris::shift_geometry() 
+```
+
+
+### Life Expectancy
+
+When looking at the life expectancy data, we see that the `Tract ID` column is the unique identifier for each Census tract and the `e(0)` column is the life expectancy. We will rename the columns to `geoid` and `lifexp`, respectively.
+
+-   However, take note that for the first few rows, the `Tract ID` column has 10 digits because it was imported as a numeric column. Census tract FIPS codes are 11 characters, so we will need to zero-pad it to 11 characters.
+
+```{r}
+#| label: Clean Life Expectancy Data
+
+usaleep_prelim |> head()
+
+usaleep <- usaleep_prelim |> 
+  dplyr::select(GEOID = `Tract ID`,
+                lifexp = `e(0)`) |> 
+  dplyr::mutate(GEOID = GEOID |> str_pad(11, pad = "0"))
+
+```
+
+Next, let's use the `dplyr::left_join()` function in order to perform a table join between the geographic tracts data and the life expectancy data.
+
+```{r}
+#| label: Table Join Tracts with Life Expectancy Data 
+
+usaleep_mo2015_sf_unproj <- tracts_mo2015_sf |> 
+  dplyr::left_join(usaleep, by = "GEOID") |> 
+  dplyr::select(GEOID, lifexp)
+
+```
+
+Using the `sf::st_crs()` function, we can see that the geographic coordinate system (GCS) for the life expectancy sf data is EPSG:4269. We can tell that the sf file is not projected because the description contains "GEOGCRS".
+
+```{r}
+#| label: Check Life Expectancy SF Coordinate System
+
+usaleep_mo2015_sf_unproj |> sf::st_crs()
+
+```
+
+Use the `sf::st_transform()` function to change the projected coordinate system (PCS) of the life expectancy sf data to EPSG:2815, which is the PCS for Missouri East. Using the `sf::st_crs()` function, we can now see that the life expectancy sf data is projected because the description contains "PROJCRS".
+
+```{r}
+#| label: Project Life Expectancy SF Data
+
+usaleep_mo2015_sf <- usaleep_mo2015_sf_unproj |> 
+  sf::st_transform("EPSG:2815")
+
+usaleep_mo2015_sf |> sf::st_crs()
+
+```
+
+### Merging Data
+
+Use the `dplyr::left_join()` function in order to perform a table join for the geographic life expectancy data and the tabular ACS data.
+
+```{r merge}
+#| label: Merge Data
+
+mo2015_sf <- usaleep_mo2015_sf |> 
+  dplyr::left_join(acs_mo2015_df, by = "GEOID")
+
+```
+
+## Exporting Data
+
+We can export our merged data in a couple of different formats:
+
+-   **Shapefile**: Use the `sf::st_write()` function to write the spatial data to a shapefile.
+-   **Parquet**: Use the `sf::arrow::st_write_parquet()` function to write the spatial data to a parquet file.
+
+```{r}
+#| label: Export Data
+
+mo2015_sf |> sf::st_write("data/mo2015_shp/mo2015_shp.shp")
+mo2015_sf |> sfarrow::st_write_parquet("data/mo2015_sf.parquet")
+usaleep_mo2015_sf_unproj |> sfarrow::st_write_parquet("data/usaleep_mo2015_sf_unproj.parquet")
+acs_states_sf |> sfarrow::st_write_parquet("data/acs_states_sf.parquet")
+
+```

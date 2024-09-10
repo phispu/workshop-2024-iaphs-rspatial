@@ -1,0 +1,420 @@
+# Mapping
+
+## Load Packages
+
+If you restarted R, you will need to load the packages for this workshop again.
+
+```{r}
+#| label: Installing and Loading Packages
+
+library(pacman)
+pacman::p_load(
+  # Spatial packages
+  tidycensus,
+  sf,
+  sfdep,
+  sfarrow,
+  ggspatial,
+  cartogram,
+  # Data importing, wrangling, and plotting packages
+  tidyverse,
+  usethis,
+  readr,
+  patchwork,
+  gganimate
+)
+
+```
+
+## Importing Data
+
+Let's try importing the files that we exported earlier. Use the `sf::arrow::st_read_parquet()` function to read our exported parquet files as sf objects in R.
+
+```{r}
+#| label: Import Parquet
+
+usaleep_mo2015_sf <- sfarrow::st_read_parquet("data/mo2015_sf.parquet")
+usaleep_mo2015_sf_unproj <- sfarrow::st_read_parquet("data/usaleep_mo2015_sf_unproj.parquet")
+acs_states_sf <- sfarrow::st_read_parquet("data/acs_states_sf.parquet")
+
+```
+
+State-level life expectancy data was previously obtained and cleaned from the [CDC National Center for Health Statistics](https://www.cdc.gov/nchs/pressroom/sosmap/life_expectancy/life_expectancy.htm).
+
+-   Use the `sf::st_read()` function to read the shapefile as an sf object in R.
+
+```{r}
+#| label: Import Shapefile
+
+lifexp_us_sf <- sf::st_read("data/lifexp_us_shp/lifexp_us_shp.shp")
+
+```
+
+## Static Maps
+
+### Map Only Boundaries
+
+Let's first create a static map of the Census tract boundaries of Missouri. Using the ggplot2 package, we can plot the spatial data using the `geom_sf()` function. We can add a title with the `labs()` function.
+
+```{r}
+#| label: Static Map - Missouri Boundaries
+
+plot_mo2015 <- usaleep_mo2015_sf |> 
+  ggplot() + 
+  geom_sf() +
+  labs(title = "Projected")
+
+plot_mo2015
+
+```
+
+#### Combining Maps to Compare Projected and Unprojected Maps
+
+Let's also plot our unprojected plot from earlier. Using syntax from the patchwork package, we can use the `+` operator to plot these two maps side by side.
+
+```{r}
+#| label: Compare Unprojected and Projected Life Expectancy SF Data
+
+plot_mo2015_unproj <- usaleep_mo2015_sf_unproj |> 
+  ggplot() + 
+  geom_sf() +
+  labs(title = "Unprojected")
+
+plot_mo2015 + plot_mo2015_unproj
+
+```
+
+#### Customizing Your Map
+
+##### ... Changing map theme
+
+Use the `theme_void()` function to remove the background and axis marks.
+
+```{r map_theme}
+#| label: Add Map Theme
+
+smap_1 <- plot_mo2015 +
+  theme_void()
+
+smap_1
+```
+
+##### ... Changing Map Title
+
+Use the `plot.title = element_text(hjust = 0.5, face = "bold")` in the `theme()` function to center the title of the map.
+
+-   `hjust = 0.5` allows you to center your title
+-   `face = "bold` allows you to bold your title
+
+```{r map_theme}
+#| label: Center Map Title
+
+smap_2 <- smap_1 +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+smap_2
+```
+
+##### ... Adding in a north arrow
+
+Use the `ggspatial::annotation_north_arrow()` function to add in a north arrow to the map.
+
+-   The `location = tr` argument is used to place the north arrow on the top right area of the map.
+
+```{r map_arrrowscale}
+#| label: Add North Arrow
+
+smap_3 <- smap_2 +
+  ggspatial::annotation_north_arrow(location = 'tr')
+
+smap_3
+```
+
+##### ... Adding in a scale bar
+
+Use the `ggspatial::annotation_scale()` to add in a scalebar to the map.
+
+-   The `unit_category = 'imperial'` argument is used to change the units in the scale bar from metric to imperial units (showing miles instead of kilometers).
+
+```{r map_arrrowscale}
+#| label: Add Scale Bar
+
+smap_4 <- smap_3 +
+  ggspatial::annotation_scale(unit_category = 'imperial') 
+
+smap_4
+```
+
+##### Putting it all together
+
+We can create the map using the previous functions in one step.
+
+```{r map_single}
+usaleep_mo2015_sf |> 
+  ggplot() + 
+  geom_sf() +
+  theme_void() +
+  labs(title = "Projected") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ggspatial::annotation_north_arrow(location = 'tr') +
+  ggspatial::annotation_scale(unit_category = 'imperial') 
+  
+```
+
+### Choropleth Maps
+
+#### Single Variable
+
+A choropleth map is a thematic map in which areas are shaded or patterned in proportion to the value of a variable being represented. This type of map is commonly used to visualize how a measurement varies across a geographic area, such as population density or median income.
+
+##### ... Adding in a variable to create choropleth map
+
+In `ggplot::geom_sf()`, use the `fill` argument in the `aes()` function to specify a variable that you would like to visualize In our example, we are visualizing the geographic distribution of those who have a percentage high school education.
+
+-   The gray areas represent tracts with missing data.
+
+```{r map_choropleth}
+#| label: Create Choropleth Map
+
+smap_1 <- usaleep_mo2015_sf |> 
+  ggplot() +
+  geom_sf(aes(fill = inc))
+
+smap_1
+```
+
+##### ... Changing legend colors
+
+Use the `low` and `high` arguments in the `scale_fill_continuous()` to specify colors to use for low and high values on a continuous scale.
+
+```{r map_fill}
+#| label: Changing Fill Colors
+
+smap_2 <- smap_1 + 
+  scale_fill_continuous(low = 'white', high = 'blue')
+
+smap_2
+```
+
+#### Multiple Variables
+
+##### Prepare Long Dataset with Life Expectancy and Census Variables
+
+Use the `tidyr::pivot_longer()` function in order to create one column for the percent values for those with less than a high school education or who were foreign-born in our dataset.
+
+```{r map_long}
+mo2015_sf_long <- usaleep_mo2015_sf |> 
+  tidyr::pivot_longer(cols = c(pct_lths, pct_fb),
+                      names_to = 'variable_name',
+                      values_to = 'value') 
+
+mo2015_sf_long |> head()
+
+```
+
+##### Create a Facet Plot
+
+Use the `facet_grid()` function to create a facet plot for our variables.
+
+```{r}
+#| label: Create Facet Plot
+
+multmap_1 <- mo2015_sf_long |> 
+  ggplot() +
+  ggplot2::geom_sf() +
+  geom_sf(aes(fill = value)) +
+  facet_grid(~ variable_name)
+
+multmap_1
+```
+
+##### ... Adding in Different legend colors, Theme, Title, North Arrow, and Scalebar
+
+Use the previous functions we reviewed to polish our map and add different legend colors, theme, a title, a north arrow, and a scalebar.
+
+-   Use the `height` and `width` arguments in the `ggspatial::annotation_north_arrow()` function in order to change the size of the north arrow and the `style` argument to change it to a different style
+
+```{r}
+#| label: Customize Facet Plot
+
+multmap_2 <- multmap_1 +
+  scale_fill_continuous(low = 'white', high = 'blue') +
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+  labs(title = 'Missouri') +
+  ggspatial::annotation_north_arrow(location = 'tr', height = unit(0.5, "cm"), width = unit(0.5, "cm"),
+                                    style = north_arrow_orienteering(text_size = 1)) +
+  ggspatial::annotation_scale(unit_category = 'imperial')
+
+multmap_2
+```
+
+##### Putting it all together
+
+We can create the map using the previous functions in one step.
+
+```{r}
+#| label: Create Facet Plot - One Step
+
+multmap <- mo2015_sf_long |> 
+  ggplot() +
+  ggplot2::geom_sf() +
+  geom_sf(aes(fill = value)) +
+  facet_wrap(vars(variable_name), ncol = 3) + 
+  scale_fill_continuous(low = 'white', high = 'blue') + 
+  theme_void() +
+  labs(title = 'CHD Prevalence and Educational Attainment in New York') +
+  ggspatial::annotation_north_arrow(location = 'tl', height = unit(0.5, "cm"), width = unit(0.5, "cm"),
+                                    style = north_arrow_orienteering(text_size = 1)) +
+  ggspatial::annotation_scale(unit_category = 'imperial')
+
+multmap
+  
+```
+
+### Cartogram
+
+Cartograms are maps where the geometry of the areas are changed to convey information. In this example, we are using the `cartogram::cartogram_dorling()` function to create a type of cartogram that are represented by circles. First we need to prep our data. We will weight by an exponentiated version of the Gini coefficient so we can have circles that are more different in size.
+
+
+```{r}
+#| label: Cartogram - Prep Data
+
+# Life expectancy data
+lifexp_us_sf_2018 <- lifexp_us_sf |> 
+  dplyr::filter(yr == 2018)
+
+# ACS data
+acs_states_sf_2018 <- acs_states_sf |> 
+  dplyr::mutate(gini_exp = gini**15) |> 
+  dplyr::filter(yr == 2018)
+
+```
+
+Use the `cartogram::cartogram_dorling()` function to create a type of cartogram that are represented by circles.
+
+- The `k = 1` argument is used to create smaller circles so they can later fit onto the map.
+
+```{r}
+#| label: Cartogram - Create
+
+acs_dorling_2018 <- acs_states_sf_2018 |> 
+  cartogram::cartogram_dorling(weight = "gini_exp", k = 1)
+
+```
+
+When comparing the gini coefficient with life expectancy, we can first visualize the relationship with a scatterplot.
+
+```{r}
+#| label: Scatterplot
+
+acs_dorling_2018 |> 
+  dplyr::left_join(lifexp_us_sf_2018 |> as_tibble(), by = "state") |> 
+  ggplot(aes(x = gini, y = lifexp)) +
+  geom_point() +
+  geom_smooth()
+```
+
+When plotting the cartogram, the overall relationship is harder to discern but the cartogram allows us to see comparisons by state. This gives us some more information.
+
+- We see high income inquality and low life expectancy in the South.
+- But this relationship isn't consistent. We also see high income inequality and high life expectancy in a state like California.
+
+```{r}
+#| label: Cartogram - Map
+
+ggplot() +
+  geom_sf(data = lifexp_us_sf_2018, aes(fill = lifexp)) +
+  geom_sf(data = acs_dorling_2018, aes(alpha = gini, group = state), fill = "red") +
+  scale_fill_gradient(low = "white", high = "forestgreen") +
+  scale_alpha_continuous(range = c(0, 0.5)) 
+
+```
+
+
+## Animated Maps
+
+Animated maps are a great way to visualize changes over time. In this example, we will create an animated map that shows this relationship between life expectancy and the Gini coefficient over time.
+
+```{r}
+#| label: Animated Map - Prep Data
+
+acs_dorling_2018 <- acs_states_sf |> 
+  dplyr::mutate(gini_exp = gini**15) |> 
+  dplyr::filter(yr == 2018) |>
+  cartogram::cartogram_dorling(weight = "gini_exp", k = 1)
+
+acs_dorling_2019 <- acs_states_sf |> 
+  dplyr::mutate(gini_exp = gini**15) |> 
+  dplyr::filter(yr == 2019) |> 
+  cartogram::cartogram_dorling(weight = "gini_exp", k = 1)
+
+acs_dorling_2020 <- acs_states_sf |> 
+  dplyr::mutate(gini_exp = gini**15) |> 
+  dplyr::filter(yr == 2020) |> 
+  cartogram::cartogram_dorling(weight = "gini_exp", k = 1)
+
+# Concatenate the rows
+acs_dorling <- dplyr::bind_rows(
+  acs_dorling_2018,
+  acs_dorling_2019,
+  acs_dorling_2020)
+
+```
+
+### Plot Facets by Time
+
+One way of visualizing differences across time is faceting by time.
+
+```{r}
+#| Label: Facet Plots by time
+
+ggplot() +
+  geom_sf(data = lifexp_us_sf, aes(fill = lifexp)) +
+  geom_sf(data = acs_dorling, aes(alpha = pct_lths, group = state), fill = "red") +
+  facet_grid(yr ~ .) 
+
+```
+
+### Plot Animation by  Time
+
+Use the `gganimate::transition_manual()` function to animate by `yr`.
+
+```{r}
+#| Label: Animated Map
+
+plot_anim <- ggplot() +
+  geom_sf(data = lifexp_us_sf, aes(fill = lifexp)) +
+  geom_sf(data = acs_dorling, aes(alpha = pct_lths, group = state), fill = "red") +
+  gganimate::transition_manual(yr)
+
+plot_anim
+
+```
+
+The plot is pretty non-descript, so let's add a title with the year. You can reference the years with `{current_frame}` in the title.
+
+```{r}
+#| Label: Animated Map - Add Title
+
+plot_anim + 
+  labs(title = "Year: {current_frame}") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+```
+
+Now, let's make this plot pretty with some of the functions we learned before.
+
+```{r}
+plot_anim + 
+  labs(title = "Year: {current_frame}", fill = "Life Expectancy") +
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        legend.position = "bottom") +
+  scale_fill_gradient(low = "white", high = "forestgreen") +
+  scale_alpha_continuous(range = c(0, 0.5)) +
+  ggspatial::annotation_north_arrow(location = 'tl') +
+  ggspatial::annotation_scale(location = 'br', unit_category = 'imperial')
+
+```
+

@@ -1,0 +1,26 @@
+project:
+  type: book
+  execute-dir: project
+  
+book:
+  title: "Workshop: An Interactive Introduction to R Spatial Packages: Incorporating Historic Sociodemographic Data from the US Census and Population Life Expectancy in Static and Animated Maps"
+  subtitle: "IAPHS 2024"
+  author: "Stephen Uong"
+  date: "9/10/2024"
+  chapters:
+    - index.qmd
+    - code/1-Tidyverse Primer.qmd
+    - code/2-Introduction - Importing Cleaning Exporting Spatial Data.qmd
+    - code/3-Mapping.qmd
+    - code/4-Additional Resources.qmd
+
+bibliography: references.bib
+
+format:
+  html:
+    theme: cosmo
+  pdf:
+    documentclass: scrreprt
+
+editor: visual
+
